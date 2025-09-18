@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Project Cocoa: Transportation Plan</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+    <style>
+        :root {
+            --primary-color: #EFEBE9;      /* Soft Taupe background */
+            --secondary-color: #FFFBF5;     /* Warm off-white for cards */
+            --text-primary: #44403C;      /* Dark brown for text */
+            --text-secondary: #78716C;     /* Lighter brown for secondary text */
+            --border-color: #D7CCC8;      /* A light brown border color */
+            --accent-1: #BF360C; /* A rich, deep orange/brown */
+            --accent-2: #2E7D32; /* A vibrant, earthy green */
+            --accent-3: #C2185B; /* A rich berry/red color */
+            --accent-4: #4527A0; /* A deep violet */
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--primary-color);
+            color: var(--text-primary);
+        }
+        .slide { display: none; opacity: 0; transition: opacity 0.5s ease-in-out; }
+        .slide.active { display: flex; opacity: 1; }
+        .slide-content {
+            background-color: var(--secondary-color);
+            border-radius: 1rem;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            padding: 2rem 3rem;
+            width: 100%;
+            max-width: 1100px;
+            height: 640px;
+            display: flex;
+            flex-direction: column;
+            border: 1px solid var(--border-color);
+            position: relative;
+            overflow: hidden;
+        }
+        .slide-title { 
+            display: flex; align-items: center; gap: 0.75rem; 
+            font-size: 2rem; font-weight: 700; margin-bottom: 1.5rem; 
+            color: var(--text-primary); border-bottom: 2px solid var(--border-color); padding-bottom: 1rem;
+        }
+        .accent-text { color: var(--accent-1); }
+        .nav-button {
+            background-color: #FFFFFF;
+            color: var(--text-primary);
+            padding: 0.5rem 1.25rem;
+            border-radius: 9999px;
+            border: 1px solid var(--border-color);
+            transition: all 0.2s;
+            font-weight: 500;
+        }
+        .nav-button:hover:not(:disabled) { background-color: #EFEBE9; box-shadow: 0 1px 3px 0 rgba(0,0,0,0.1); }
+        .nav-button:disabled { opacity: 0.5; cursor: not-allowed; }
+        .progress-bar-container { width: 400px; height: 6px; background-color: var(--border-color); border-radius: 9999px; overflow: hidden; }
+        .progress-bar { height: 100%; background: linear-gradient(90deg, var(--accent-1), var(--accent-2)); transition: width 0.4s ease-out; }
+        #map { height: 100%; width: 100%; border-radius: 0.75rem; background-color: var(--border-color); }
+        .timeline { position: relative; padding-left: 20px; }
+        .timeline::before { content: ''; position: absolute; left: 0; top: 10px; bottom: 10px; width: 3px; background-color: var(--border-color); border-radius: 1.5px; }
+        .timeline-item { position: relative; padding-left: 40px; margin-bottom: 1.25rem; }
+        .timeline-dot { position: absolute; left: -10px; top: 5px; height: 24px; width: 24px; background: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 3px solid var(--accent-1); }
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background-color: rgba(0, 0, 0, 0.6); backdrop-filter: blur(5px);
+            display: none; align-items: center; justify-content: center;
+            z-index: 1000; opacity: 0; transition: opacity 0.3s ease-in-out;
+        }
+        .modal-overlay.active { display: flex; opacity: 1; }
+        .modal-content {
+            background-color: var(--secondary-color);
+            padding: 2.5rem; border-radius: 1rem; max-width: 600px; width: 90%;
+            border: 1px solid var(--border-color); position: relative;
+            transform: scale(0.95); transition: transform 0.3s ease-in-out; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25);
+        }
+        .modal-overlay.active .modal-content { transform: scale(1); }
+        .clickable-item {
+            transition: all 0.2s ease-in-out;
+            cursor: pointer;
+        }
+        .clickable-item:hover {
+            transform: translateY(-4px) scale(1.02);
+            background-color: #FFFBEB;
+            border-color: var(--accent-1);
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+        }
+        .kpi-card {
+            background-color: #FFFBF5;
+            border: 1px solid var(--border-color);
+            border-radius: 0.75rem;
+            padding: 1.25rem;
+            text-align: center;
+        }
+        .kpi-value {
+            font-size: 2.25rem;
+            font-weight: 700;
+        }
+        .kpi-label {
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+        }
+        .slide-footer {
+            position: absolute;
+            bottom: 1.5rem;
+            left: 3rem;
+            right: 3rem;
+            text-align: center;
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+        }
+    </style>
+</head>
+<body class="overflow-hidden">
+
+    <div id="presentation" class="h-screen w-screen flex flex-col items-center justify-center p-4 md:p-8 transition-all duration-500">
+        
+        <section class="slide active" id="slide-1">
+             <div class="slide-content text-center items-center justify-center relative overflow-hidden">
+                <h1 class="text-6xl font-bold mb-4 z-10">Project <span class="accent-text">Cocoa</span></h1>
+                <p class="text-2xl text-gray-700 mb-2 z-10">A Strategic Transportation Plan for Ghanaian Cocoa Beans</p>
+                <p class="text-xl z-10 text-gray-500">Optimizing the Supply Chain from Tema to Zurich</p>
+                <div class="mt-12 border-t border-gray-200 pt-6 text-lg z-10"><p><strong>Group:</strong> 3</p><p><strong>Location:</strong> Zurich, Switzerland</p></div>
+            </div>
+        </section>
+
+        <section class="slide" id="slide-2">
+            <div class="slide-content">
+                <h2 class="slide-title"><svg class="h-9 w-9 accent-text" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>Executive Summary: Our Strategic Goals</h2>
+                <div class="w-full grid grid-cols-1 md:grid-cols-3 gap-6 mt-4">
+                     <div class="kpi-card">
+                         <p class="kpi-value accent-text">~$3.11/kg</p>
+                         <p class="kpi-label">Target Landed Cost</p>
+                         <p class="text-sm text-gray-500 mt-2">Achieved via <strong style="color:var(--accent-2)">0% import duty</strong> under the GSP agreement.</p>
+                     </div>
+                     <div class="kpi-card">
+                         <p class="kpi-value" style="color: var(--accent-4)">25-30 Days</p>
+                         <p class="kpi-label">Estimated Lead Time</p>
+                         <p class="text-sm text-gray-500 mt-2">A predictable timeline from a planned multimodal supply chain.</p>
+                     </div>
+                     <div class="kpi-card">
+                         <p class="kpi-value" style="color: var(--accent-3)">A-Grade</p>
+                         <p class="kpi-label">Product Quality</p>
+                         <p class="text-sm text-gray-500 mt-2">Sourcing premium, <strong style="color:var(--accent-2)">Cocobod-certified</strong> beans with controlled handling.</p>
+                     </div>
+                </div>
+                 <div class="mt-6 h-[250px]"><canvas id="executiveSummaryChart"></canvas></div>
+            </div>
+        </section>
+
+        <section class="slide" id="slide-3">
+            <div class="slide-content">
+                <h2 class="slide-title"><svg class="h-9 w-9 accent-text" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>Shipment At a Glance</h2>
+                 <p class="text-gray-500 -mt-4 mb-6">Click any item for a detailed explanation of our strategic choices.</p>
+                <div class="grid grid-cols-2 md:grid-cols-3 gap-4 text-lg">
+                    <button data-id="1" class="clickable-item text-left bg-gray-50/50 p-3 rounded-lg border border-gray-200 flex items-center gap-3"><svg class="w-6 h-6 accent-text" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path></svg><div><p class="text-sm text-gray-500">Product</p><p class="font-bold text-base">Raw Cocoa Beans</p></div></button>
+                    <button data-id="2" class="clickable-item text-left bg-gray-50/50 p-3 rounded-lg border border-gray-200 flex items-center gap-3"><svg class="w-6 h-6 accent-text" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h2zm10 0h5a2 2 0 012 2v5a2 2 0 01-2 2h-5a2 2 0 01-2-2V5a2 2 0 012-2zM7 13h5a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm10 0h5a2 2 0 012 2v5a2 2 0 01-2 2h-5a2 2 0 01-2-2v-5a2 2 0 012-2z"></path></svg><div><p class="text-sm text-gray-500">HS Code</p><p class="font-bold text-base font-mono">1801.00.00</p></div></button>
+                    <button data-id="3" class="clickable-item text-left bg-gray-50/50 p-3 rounded-lg border border-gray-200 flex items-center gap-3"><svg class="w-6 h-6 accent-text" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6H8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9"></path></svg><div><p class="text-sm text-gray-500">Origin Country</p><p class="font-bold text-base">Ghana</p></div></button>
+                    <button data-id="4" class="clickable-item text-left bg-gray-50/50 p-3 rounded-lg border border-gray-200 flex items-center gap-3"><svg class="w-6 h-6 accent-text" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0zM15 11a3 3 0 11-6 0 3 3 0 016 0z"></path></svg><div><p class="text-sm text-gray-500">Origin Place</p><p class="font-bold text-base">Kumasi Region</p></div></button>
+                    <button data-id="5" class="clickable-item text-left bg-gray-50/50 p-3 rounded-lg border border-gray-200 flex items-center gap-3"><svg class="w-6 h-6 accent-text" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"></path></svg><div><p class="text-sm text-gray-500">Packaging</p><p class="font-bold text-base">62.5 kg Jute Sacks</p></div></button>
+                    <button data-id="8" class="clickable-item text-left bg-gray-50/50 p-3 rounded-lg border border-gray-200 flex items-center gap-3"><svg class="w-6 h-6 accent-text" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 10l-2 1m0 0l-2-1m2 1v2.5M20 7H4a2 2 0 00-2 2v6a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2z"></path></svg><div><p class="text-sm text-gray-500">INCO Term</p><p class="font-bold text-base">FOB (Port of Tema)</p></div></button>
+                    <button data-id="9" class="clickable-item text-left bg-gray-50/50 p-4 rounded-lg col-span-2 md:col-span-3 border border-gray-200 flex items-center gap-3"><svg class="w-8 h-8 accent-text" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H4a3 3 0 00-3 3v8a3 3 0 003 3z"></path></svg><div><p class="text-sm text-gray-500">Payment Term</p><p class="font-bold">Letter of Credit (L/C)</p></div></button>
+                    <button data-id="10" class="clickable-item text-left bg-gray-50/50 p-4 rounded-lg col-span-2 md:col-span-3 border border-gray-200 flex items-center gap-3"><svg class="w-8 h-8 accent-text" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path></svg><div><p class="text-sm text-gray-500">Regional Trade Agreement</p><p class="font-bold">Generalized System of Preferences (GSP)</p></div></button>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide" id="slide-4">
+            <div class="slide-content">
+                <h2 class="slide-title">
+                    <svg class="h-9 w-9 accent-text" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 10l-2 1m0 0l-2-1m2 1v2.5M20 7H4a2 2 0 00-2 2v6a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2z"></path></svg>
+                    Incoterm Strategy: Control vs. Convenience
+                </h2>
+                <div class="flex-grow flex flex-col md:flex-row gap-6 mt-2">
+                    <div class="w-full md:w-1/2 bg-green-50 p-6 rounded-xl border-2 border-green-500 flex flex-col shadow-lg">
+                        <h3 class="text-2xl font-bold text-center text-green-800">FOB: Our Choice for Control</h3>
+                        <p class="text-center text-green-700 text-sm mb-4">Free On Board (Port of Tema)</p>
+                        <div class="space-y-3 text-gray-700 flex-grow">
+                            <div class="flex items-start gap-3"><svg class="w-6 h-6 text-green-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg><div><strong>Cost Efficiency:</strong> We negotiate directly with shipping lines, avoiding inflated costs from the seller.</div></div>
+                            <div class="flex items-start gap-3"><svg class="w-6 h-6 text-green-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg><div><strong>Logistical Control:</strong> We select the carrier and route, ensuring reliability and better scheduling.</div></div>
+                            <div class="flex items-start gap-3"><svg class="w-6 h-6 text-green-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg><div><strong>Transparent Oversight:</strong> Full visibility into the main freight leg of the supply chain.</div></div>
+                        </div>
+                    </div>
+                    <div class="w-full md:w-1/2 bg-gray-50 p-6 rounded-xl border border-gray-300 flex flex-col">
+                        <h3 class="text-2xl font-bold text-center text-gray-800">CIF: The Simpler Alternative</h3>
+                        <p class="text-center text-gray-500 text-sm mb-4">Cost, Insurance, and Freight</p>
+                        <div class="space-y-3 text-gray-600 flex-grow">
+                            <div class="flex items-start gap-3"><svg class="w-6 h-6 text-red-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg><div><strong>Less Control:</strong> The seller manages freight, potentially choosing less optimal or more costly options.</div></div>
+                            <div class="flex items-start gap-3"><svg class="w-6 h-6 text-red-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg><div><strong>Hidden Costs:</strong> Freight and insurance costs are bundled into the product price, reducing transparency.</div></div>
+                             <div class="flex items-start gap-3"><svg class="w-6 h-6 text-green-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg><div><strong>High Convenience:</strong> Simpler for the buyer as the seller handles all shipping arrangements to the destination port.</div></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="mt-4 p-3 bg-blue-50/50 rounded-lg border border-blue-200 text-center">
+                    <p class="text-sm text-gray-600"><strong>Strategic Verdict:</strong> For a large-scale operation where cost and reliability are paramount, the <strong class="text-blue-700">control</strong> offered by FOB outweighs the <strong class="text-blue-700">convenience</strong> of CIF.
+                    </p>
+                </div>
+                <footer class="slide-footer">Source: International Chamber of Commerce. (2020). Incoterms® 2020 Rules.</footer>
+            </div>
+        </section>
+
+        <section class="slide" id="slide-5">
+            <div class="slide-content">
+                 <h2 class="slide-title"><svg class="h-9 w-9 accent-text" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2h1a2 2 0 002-2v-1a2 2 0 012-2h1.945M7.938 6.128a11.5 11.5 0 00-2.825.912l-1.425 1.069m3.843-1.981a11.53 11.53 0 012.338 0l1.425 1.069m-3.843-1.981a11.53 11.53 0 012.338 0m-2.338 0l-.013.003m2.35.002l.014-.003m-2.364 0a11.53 11.53 0 00-2.338 0m2.338 0l1.425 1.069M16.062 6.128a11.5 11.5 0 012.825.912l1.425 1.069m-3.843-1.981a11.53 11.53 0 00-2.338 0l-1.425 1.069m3.843-1.981a11.53 11.53 0 01-2.338 0m2.338 0l.013.003m-2.35.002l-.014-.003m2.364 0a11.53 11.53 0 01-2.338 0m-2.338 0l-1.425 1.069"></path></svg>Sourcing Analysis: Why Ghana?</h2>
+                <div class="flex gap-8 items-center h-full">
+                    <div class="w-2/3">
+                        <table class="w-full text-left text-base">
+                            <thead class="border-b-2 border-gray-200"><tr><th class="p-2">Metric</th><th class="p-2 text-center">Ghana (Selected)</th><th class="p-2 text-center">Côte d'Ivoire</th></tr></thead>
+                            <tbody>
+                                <tr class="border-b border-gray-200"><td class="p-2 font-semibold">Avg. Annual Production</td><td class="p-2 text-center text-gray-600">~800k tonnes</td><td class="p-2 text-center text-gray-600">~2.2m tonnes</td></tr>
+                                <tr class="border-b border-gray-200"><td class="p-2 font-semibold">Quality & Reliability</td><td class="p-2 text-center text-gray-600">High (Cocobod certified)</td><td class="p-2 text-center text-gray-600">High Volume</td></tr>
+                                <tr class="border-b border-gray-200"><td class="p-2 font-semibold">Swiss Import Share</td><td class="p-2 text-center font-bold text-lg" style="color:var(--accent-3)">~40%</td><td class="p-2 text-center text-gray-600">~15%</td></tr>
+                                <tr class="border-b border-gray-200"><td class="p-2 font-semibold">Swiss Import Tariff</td><td class="p-2 text-center font-bold text-lg" style="color:var(--accent-3)">0% (GSP)</td><td class="p-2 text-center text-gray-600">0% (GSP)</td></tr>
+                            </tbody>
+                        </table>
+                        <div class="mt-4 p-3 bg-gray-50/50 rounded-lg border border-gray-200"><h4 class="font-bold text-center">Strategic Conclusion</h4><p class="text-center text-sm text-gray-500">While smaller in volume, Ghana is already Switzerland's primary supplier, offering superior, certified quality with a significant 0% tariff advantage. This makes it the most reliable and cost-effective partner.</p></div>
+                    </div>
+                    <div class="w-1/3 flex flex-col items-center justify-center h-full">
+                        <h3 class="font-bold text-center mb-2">Swiss Cocoa Imports by Origin</h3>
+                        <div class="h-[250px] w-[250px]"><canvas id="sourcingChart"></canvas></div>
+                         <p class="text-xs text-center text-gray-500 mt-2">Switzerland imports over 180,000 tonnes of cocoa beans annually.</p>
+                    </div>
+                </div>
+                <footer class="slide-footer">Source: International Trade Centre. (2025). Trade Map.</footer>
+            </div>
+        </section>
+
+        <section class="slide" id="slide-6">
+            <div class="slide-content">
+                <h2 class="slide-title">
+                    <svg class="h-9 w-9 accent-text" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0zM15 11a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                    Visualizing the Supply Chain
+                </h2>
+                <div class="flex-grow w-full flex flex-col md:flex-row gap-6 items-stretch overflow-hidden mt-2">
+                    <div class="w-full md:w-3/5 h-full min-h-[250px]"><div id="map"></div></div>
+                    
+                    <div class="w-full md:w-2/5 flex flex-col justify-between gap-4">
+                        <div class="flex-grow">
+                            <h3 class="font-bold text-lg mb-2">Multimodal Journey</h3>
+                            <div class="space-y-2">
+                                <div class="flex items-center gap-3 p-2 bg-gray-50 rounded-lg"><div class="bg-gray-200 rounded-full h-8 w-8 flex-shrink-0 flex items-center justify-center font-bold accent-text">1</div><svg class="w-6 h-6 text-gray-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"></path></svg><div><p class="font-semibold">Kumasi, GH</p><p class="text-xs text-gray-500">Inland Trucking</p></div></div>
+                                <div class="flex items-center gap-3 p-2 bg-gray-50 rounded-lg"><div class="bg-gray-200 rounded-full h-8 w-8 flex-shrink-0 flex items-center justify-center font-bold accent-text">2</div><svg class="w-6 h-6 text-gray-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"></path></svg><div><p class="font-semibold">Port of Tema, GH</p><p class="text-xs text-gray-500">Ocean Freight</p></div></div>
+                                <div class="flex items-center gap-3 p-2 bg-gray-50 rounded-lg"><div class="bg-gray-200 rounded-full h-8 w-8 flex-shrink-0 flex items-center justify-center font-bold accent-text">3</div><svg class="w-6 h-6 text-gray-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20l4-8-4-8M3 12h18M4 4l4 8-4 8"></path></svg><div><p class="font-semibold">Antwerp, BE</p><p class="text-xs text-gray-500">Inland Rail</p></div></div>
+                                <div class="flex items-center gap-3 p-2 bg-gray-50 rounded-lg"><div class="bg-gray-200 rounded-full h-8 w-8 flex-shrink-0 flex items-center justify-center font-bold accent-text">4</div><svg class="w-6 h-6 text-gray-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"></path></svg><div><p class="font-semibold">Basel, CH</p><p class="text-xs text-gray-500">Inland Trucking</p></div></div>
+                                <div class="flex items-center gap-3 p-2 bg-gray-50 rounded-lg"><div class="bg-gray-200 rounded-full h-8 w-8 flex-shrink-0 flex items-center justify-center font-bold accent-text">5</div><p class="font-semibold">🏁 Zurich, CH (Destination)</p></div>
+                            </div>
+                        </div>
+                        <div class="w-full h-32 md:h-48 bg-gray-800 rounded-xl flex items-center justify-center relative clickable-item group cursor-pointer" onclick="alert('This is a simulated video playback of the supply chain journey.')">
+                            <div class="absolute inset-0 bg-cover bg-center rounded-xl opacity-40 group-hover:opacity-50 transition-opacity" style="background-image: url('https://images.unsplash.com/photo-1606820854416-439b3305ff39?q=80&w=1170&auto=format&fit=crop');"></div>
+                            <div class="relative flex flex-col items-center justify-center p-4">
+                                <svg class="w-12 h-12 md:w-16 md:h-16 text-white opacity-80 group-hover:opacity-100 group-hover:scale-110 transition-all" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd"></path></svg>
+                                <p class="text-white font-semibold mt-2 text-center text-sm md:text-base">Watch the Journey</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+
+        <section class="slide" id="slide-7">
+            <div class="slide-content">
+                <h2 class="slide-title"><svg class="h-9 w-9 accent-text" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l4-4 4 4m0 6l-4 4-4-4"></path></svg>Port Selection: Antwerp vs. Rotterdam</h2>
+                <p class="text-center text-gray-500 mb-4">A strategic decision to select the most specialized port for our high-value commodity.</p>
+                <div class="flex-grow flex gap-8 items-stretch">
+                    <div class="w-1/2 bg-green-50 p-4 rounded-lg border-2 border-green-500 flex flex-col">
+                        <h3 class="text-xl font-bold text-center text-green-700">Port of Antwerp (Chosen)</h3>
+                        <ul class="mt-2 list-disc list-inside space-y-1 text-gray-700 flex-grow">
+                            <li><strong>World's #1 Cocoa Port:</strong> Largest storage capacity for cocoa in the world.</li>
+                            <li><strong>Specialized Infrastructure:</strong> Climate-controlled warehouses dedicated to cocoa.</li>
+                            <li><strong>Quality Control Hub:</strong> On-site services for sampling, grading, and fumigation.</li>
+                            <li><strong>Superior Swiss Connectivity:</strong> Excellent, direct rail and barge links to Basel.</li>
+                        </ul>
+                    </div>
+                    <div class="w-1/2 bg-gray-50 p-4 rounded-lg border border-gray-200 flex flex-col">
+                        <h3 class="text-xl font-bold text-center">Port of Rotterdam</h3>
+                        <ul class="mt-2 list-disc list-inside space-y-1 text-gray-600 flex-grow">
+                            <li>Europe's largest overall port by cargo volume.</li>
+                            <li>Excellent general container handling facilities.</li>
+                            <li>Good connectivity, but less specialized for cocoa.</li>
+                            <li>Potentially longer transit to Switzerland.</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="mt-4 p-3 bg-blue-50/50 rounded-lg border border-blue-200"><h4 class="font-bold text-center">The Verdict</h4><p class="text-center text-sm text-gray-500">Antwerp's specialization in cocoa provides unparalleled expertise, ensures quality preservation, and offers the most efficient onward logistics to Switzerland. This de-risks the supply chain and justifies its selection over Rotterdam, despite Rotterdam's larger overall size.</p></div>
+                 <footer class="slide-footer">Source: Port of Antwerp-Bruges. (2024). Annual Report.</footer>
+            </div>
+        </section>
+
+        <section class="slide" id="slide-8">
+            <div class="slide-content">
+                <h2 class="slide-title"><svg class="h-9 w-9 accent-text" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>Deconstructing the Timeline</h2>
+                <div class="flex items-center gap-8 mt-4">
+                    <div class="w-1/2">
+                        <div class="timeline">
+                            <div class="timeline-item"><div class="timeline-dot">🚚</div><div><h4 class="font-bold text-lg">Inland Trucking: <span class="accent-text">1-2 Days</span></h4><p class="text-sm text-gray-500">Collection from Kumasi, delivery to Port of Tema.</p></div></div>
+                            <div class="timeline-item"><div class="timeline-dot" style="border-color:var(--accent-2)">🚢</div><div><h4 class="font-bold text-lg">Ocean Freight: <span style="color:var(--accent-2)">18-22 Days</span></h4><p class="text-sm text-gray-500">Vessel transit from Tema to Antwerp, including loading.</p></div></div>
+                            <div class="timeline-item"><div class="timeline-dot" style="border-color:var(--accent-4)">🚆</div><div><h4 class="font-bold text-lg">Inland Rail: <span style="color:var(--accent-4)">2-3 Days</span></h4><p class="text-sm text-gray-500">Unloading, customs transit, rail journey to Basel.</p></div></div>
+                            <div class="timeline-item"><div class="timeline-dot" style="border-color:var(--accent-3)">🚚</div><div><h4 class="font-bold text-lg">Final Delivery: <span style="color:var(--accent-3)">1 Day</span></h4><p class="text-sm text-gray-500">Swiss customs clearance and delivery to Zurich.</p></div></div>
+                        </div>
+                    </div>
+                    <div class="w-1/2 h-[300px]"><canvas id="transitChart"></canvas></div>
+                </div>
+                 <div class="mt-4 text-center bg-gray-50/50 p-4 rounded-lg border border-gray-200">
+                    <h3 class="text-2xl font-bold">Total Estimated Lead Time: <span class="accent-text">25 - 30 Days</span></h3>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide" id="slide-9">
+            <div class="slide-content">
+                <h2 class="slide-title"><svg class="h-9 w-9 accent-text" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H4a3 3 0 00-3 3v8a3 3 0 003 3z"></path></svg>The Financial Advantage</h2>
+                <p class="text-xl mb-8 max-w-3xl mx-auto text-gray-500 text-center">Strategic sourcing provides a massive cost advantage via Switzerland's international trade agreements.</p>
+                 <div class="flex flex-col md:flex-row justify-center gap-8">
+                     <div class="bg-gray-50/50 p-8 rounded-lg flex-1 border border-gray-200 text-center"><h3 class="text-2xl font-semibold mb-2">Trade Agreement</h3><p class="text-5xl font-bold accent-text">GSP</p><p class="text-gray-500 mt-2">(Generalized System of Preferences)</p></div>
+                     <div class="bg-gray-50/50 p-8 rounded-lg flex-1 border border-gray-200 text-center"><h3 class="text-2xl font-semibold mb-2">Import Duty (HS 1801.00)</h3><p class="text-5xl font-bold accent-text">0%</p><p class="text-gray-500 mt-2">The most significant cost-saving factor.</p></div>
+                     <div class="bg-gray-50/50 p-8 rounded-lg flex-1 border border-gray-200 text-center"><h3 class="text-2xl font-semibold mb-2">Value Added Tax (VAT)</h3><p class="text-5xl font-bold" style="color:var(--accent-2)">2.6%</p><p class="text-gray-500 mt-2">Reduced rate for foodstuffs in Switzerland.</p></div>
+                 </div>
+                 <footer class="slide-footer">Source: Swiss Federal Customs Administration. (2025). Tares Tariff System.</footer>
+            </div>
+        </section>
+
+        <section class="slide" id="slide-10">
+            <div class="slide-content">
+                <h2 class="slide-title"><svg class="h-9 w-9 accent-text" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>Deep Dive: Total Landed Cost Breakdown</h2>
+                <p class="text-center text-gray-500 -mt-4 mb-4">Click any cost item for a detailed explanation. (Basis: 1x 20ft Container / 10,000kg)</p>
+                <div class="flex items-center gap-8 h-[380px]">
+                    <div class="w-1/2 space-y-2">
+                        <div data-id="c1" class="clickable-item grid grid-cols-3 p-2 rounded-lg border border-transparent"><span class="font-bold col-span-2">A. Product Cost (FOB)</span> <span class="text-right font-mono" style="color: var(--accent-1)">$25,700.00</span></div>
+                        <div data-id="c3" class="clickable-item grid grid-cols-3 p-2 rounded-lg border border-transparent"><span class="font-bold col-span-2">B. Ocean Freight & Insurance</span> <span class="text-right font-mono" style="color: var(--accent-2)">$2,638.00</span></div>
+                        <div data-id="c4" class="clickable-item grid grid-cols-3 p-2 rounded-lg border border-transparent"><span class="font-bold col-span-2">C. Destination Handling (EU/CH)</span> <span class="text-right font-mono" style="color: var(--accent-4)">$2,000.00</span></div>
+                        <div data-id="c5" class="clickable-item grid grid-cols-3 p-2 rounded-lg border border-transparent"><span class="font-bold col-span-2">D. Swiss VAT (2.6%)</span> <span class="text-right font-mono" style="color: var(--accent-3)">$750.00</span></div>
+                        
+                        <div class="grid grid-cols-3 p-2 rounded-lg bg-gray-100 mt-4! pt-4 border-t-2 border-gray-300"><span class="font-bold col-span-2">TOTAL LANDED COST</span> <span class="text-right font-mono text-xl accent-text">$31,088.00</span></div>
+                        <div class="grid grid-cols-3 p-2 rounded-lg bg-gray-800 text-white"><span class="font-bold col-span-2 text-lg">LANDED COST PER KG</span> <span class="text-right font-mono text-2xl" style="color: var(--accent-3)">$3.11</span></div>
+                    </div>
+                    <div class="w-1/2 h-full"><canvas id="costBreakdownPieChart"></canvas></div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide" id="slide-11">
+            <div class="slide-content">
+                <h2 class="slide-title"><svg class="h-9 w-9 accent-text" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path></svg>Cost Buildup Analysis per Kilogram</h2>
+                <p class="text-center text-gray-500 mb-4">Visualizing how each component contributes to the final landed cost per kg.</p>
+                <div class="w-full h-[400px] relative mt-4">
+                    <canvas id="costBuildupChart"></canvas>
+                </div>
+            </div>
+        </section>
+        
+        <section class="slide" id="slide-12">
+            <div class="slide-content">
+                <h2 class="slide-title"><svg class="h-9 w-9 accent-text" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>Our Logistics Partner Ecosystem</h2>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-8 mt-4 text-center">
+                    <div class="bg-gray-50/50 p-6 rounded-lg border border-gray-200 flex flex-col">
+                        <div class="h-16 w-16 mx-auto mb-4 flex items-center justify-center rounded-full bg-blue-100"><img src="https://placehold.co/40x40/2563EB/FFFFFF?text=KN" alt="KN Logo" class="rounded-full"></div>
+                        <h3 class="text-2xl font-semibold mb-2">Freight Forwarder</h3>
+                        <p class="text-gray-500 flex-grow">Manages the entire shipment, booking cargo space, handling documentation, and coordinating all partners.</p>
+                        <div class="mt-4 border-t border-gray-200 pt-4"><p class="text-sm font-semibold text-gray-700">Example Partner:</p><p class="font-bold text-lg mt-1 accent-text">Kuehne + Nagel</p><p class="text-xs text-gray-500 mt-1">A Swiss-based global leader with a strong network in West Africa.</p></div>
+                    </div>
+                    <div class="bg-gray-50/50 p-6 rounded-lg border border-gray-200 flex flex-col">
+                         <div class="h-16 w-16 mx-auto mb-4 flex items-center justify-center rounded-full bg-orange-100"><img src="https://placehold.co/40x40/D97706/FFFFFF?text=MSC" alt="MSC Logo" class="rounded-full"></div>
+                        <h3 class="text-2xl font-semibold mb-2">Shipping Line</h3>
+                        <p class="text-gray-500 flex-grow">Owns and operates the vessel for the main ocean transit from the Port of Tema to the Port of Antwerp.</p>
+                         <div class="mt-4 border-t border-gray-200 pt-4"><p class="text-sm font-semibold text-gray-700">Example Partner:</p><p class="font-bold text-lg mt-1" style="color: var(--accent-2)">MSC</p><p class="text-xs text-gray-500 mt-1">A Swiss-founded global leader in container shipping with major routes from West Africa.</p></div>
+                    </div>
+                    <div class="bg-gray-50/50 p-6 rounded-lg border border-gray-200 flex flex-col">
+                        <div class="h-16 w-16 mx-auto mb-4 flex items-center justify-center rounded-full bg-emerald-100"><img src="https://placehold.co/40x40/059669/FFFFFF?text=GW" alt="GW Logo" class="rounded-full"></div>
+                        <h3 class="text-2xl font-semibold mb-2">Customs Broker</h3>
+                        <p class="text-gray-500 flex-grow">A licensed specialist who ensures the shipment meets all customs regulations for a smooth clearance into Switzerland.</p>
+                         <div class="mt-4 border-t border-gray-200 pt-4"><p class="text-sm font-semibold text-gray-700">Example Partner:</p><p class="font-bold text-lg mt-1" style="color: var(--accent-3)">Gebrüder Weiss</p><p class="text-xs text-gray-500 mt-1">A major European LSP with extensive experience in Swiss import regulations.</p></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+        
+        <section class="slide" id="slide-13">
+            <div class="slide-content">
+                <h2 class="slide-title"><svg class="h-9 w-9 accent-text" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>Risk Analysis & Mitigation Plan</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 text-base">
+                    <div class="bg-gray-50/50 p-4 rounded-lg border border-orange-200">
+                        <h3 class="font-bold text-lg text-orange-600 mb-2 flex items-center gap-2"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>Transportation Delays</h3>
+                        <p class="text-gray-500 pl-8">Port congestion, customs holds, or bad weather.<br><span class="text-xs font-semibold">[Impact: <span class="text-orange-500">Medium</span>, Likelihood: <span class="text-orange-500">Medium</span>]</span></p>
+                        <p class="mt-2 font-semibold text-gray-800 pl-8">Mitigation: <span class="accent-text">Build in buffer stock (3-5 days).</span></p>
+                    </div>
+                     <div class="bg-gray-50/50 p-4 rounded-lg border border-orange-200">
+                        <h3 class="font-bold text-lg text-orange-600 mb-2 flex items-center gap-2"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path></svg>Price Volatility</h3>
+                        <p class="text-gray-500 pl-8">Commodity market price fluctuations.<br><span class="text-xs font-semibold">[Impact: <span class="text-red-500">High</span>, Likelihood: <span class="text-orange-500">Medium</span>]</span></p>
+                        <p class="mt-2 font-semibold text-gray-800 pl-8">Mitigation: <span class="accent-text">Secure long-term supplier contracts.</span></p>
+                    </div>
+                     <div class="bg-gray-50/50 p-4 rounded-lg border border-orange-200">
+                        <h3 class="font-bold text-lg text-orange-600 mb-2 flex items-center gap-2"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path></svg>Quality Degradation</h3>
+                        <p class="text-gray-500 pl-8">Moisture or improper handling during transit.<br><span class="text-xs font-semibold">[Impact: <span class="text-red-500">High</span>, Likelihood: <span class="text-green-500">Low</span>]</span></p>
+                        <p class="mt-2 font-semibold text-gray-800 pl-8">Mitigation: <span class="accent-text">Use ventilated containers and cargo insurance.</span></p>
+                    </div>
+                     <div class="bg-gray-50/50 p-4 rounded-lg border border-orange-200">
+                        <h3 class="font-bold text-lg text-orange-600 mb-2 flex items-center gap-2"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v.01"></path></svg>Currency Fluctuation</h3>
+                        <p class="text-gray-500 pl-8">Changes in the USD/CHF exchange rate.<br><span class="text-xs font-semibold">[Impact: <span class="text-orange-500">Medium</span>, Likelihood: <span class="text-red-500">High</span>]</span></p>
+                        <p class="mt-2 font-semibold text-gray-800 pl-8">Mitigation: <span class="accent-text">Use forward currency contracts.</span></p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="slide" id="slide-14">
+            <div class="slide-content text-center">
+                <h2 class="slide-title mx-auto"><svg class="h-9 w-9 accent-text" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"></path></svg>Final Recommendation</h2>
+                <div class="space-y-4 text-xl max-w-4xl mx-auto mt-6">
+                     <div class="bg-gray-50/50 p-4 rounded-lg border border-gray-200 flex items-center gap-4"><svg class="w-8 h-8 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg><p><strong class="accent-text">Viable & Advantageous:</strong> The plan to source cocoa from Ghana is strategically sound and financially beneficial.</p></div>
+                     <div class="bg-gray-50/50 p-4 rounded-lg border border-gray-200 flex items-center gap-4"><svg class="w-8 h-8 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg><p><strong class="accent-text">Key Cost Saver:</strong> The 0% tariff under the GSP agreement provides a significant competitive edge.</p></div>
+                     <div class="bg-gray-50/50 p-4 rounded-lg border border-gray-200 flex items-center gap-4"><svg class="w-8 h-8 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg><p><strong class="accent-text">Achievable Targets:</strong> A landed cost of ~$3.11/kg and a lead time of 25-30 days are realistic.</p></div>
+                </div>
+                 <div class="mt-8"><h3 class="text-2xl font-bold">The proposed transportation plan is recommended for immediate implementation.</h3></div>
+            </div>
+        </section>
+
+        <section class="slide" id="slide-15">
+            <div class="slide-content">
+                <h2 class="slide-title"><svg class="h-9 w-9 accent-text" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg>References</h2>
+                <div class="text-base text-gray-600 space-y-4">
+                    <p>International Chamber of Commerce. (2020). <em>Incoterms® 2020 Rules</em>. ICC Publications.</p>
+                    <p>International Trade Centre. (2025). <em>Trade Map: International trade statistics for international business development</em>. Retrieved from https://www.trademap.org</p>
+                    <p>International Trade Centre. (2025). <em>Market Access Map: Customs tariffs and market requirements</em>. Retrieved from https://www.macmap.org</p>
+                    <p>Port of Antwerp-Bruges. (2024). <em>Annual Report 2023</em>. Retrieved from the official Port of Antwerp-Bruges website.</p>
+                    <p>Swiss Federal Customs Administration (FCA). (2025). <em>Tares - Swiss customs tariff</em>. Retrieved from https://www.tares.ch</p>
+                </div>
+            </div>
+        </section>
+
+    </div>
+
+    <div id="detailModal" class="modal-overlay">
+        <div class="modal-content">
+            <button id="closeModalBtn" class="absolute top-4 right-4 text-gray-400 hover:text-gray-800 text-2xl font-bold">&times;</button>
+            <h3 id="modalTitle" class="text-2xl font-bold mb-4 accent-text"></h3>
+            <div id="modalBody" class="text-gray-600"></div>
+        </div>
+    </div>
+
+    <div class="fixed bottom-0 left-0 right-0 p-4 bg-white/80 backdrop-blur-sm border-t border-gray-200 z-50">
+        <div class="max-w-4xl mx-auto flex items-center justify-between">
+            <button id="prevBtn" class="nav-button">◄ Previous</button>
+            <div class="flex flex-col items-center">
+                <div class="progress-bar-container mb-1"><div id="progressBar" class="progress-bar"></div></div>
+                <span id="slideCounter" class="text-sm text-gray-500">1 / 15</span>
+            </div>
+            <button id="nextBtn" class="nav-button">Next ►</button>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const slides = document.querySelectorAll('.slide');
+            const prevBtn = document.getElementById('prevBtn');
+            const nextBtn = document.getElementById('nextBtn');
+            const slideCounter = document.getElementById('slideCounter');
+            const progressBar = document.getElementById('progressBar');
+            const detailModal = document.getElementById('detailModal');
+            const closeModalBtn = document.getElementById('closeModalBtn');
+            const modalTitle = document.getElementById('modalTitle');
+            const modalBody = document.getElementById('modalBody');
+            const clickableItems = document.querySelectorAll('.clickable-item');
+
+            const allDetails = {
+                '1': { title: '1. Product: Raw Cocoa Beans', content: '<strong>Description:</strong> We are sourcing high-quality, unroasted Forastero variety cocoa beans.<br><br><strong>Reasoning:</strong> This variety is the backbone of classic chocolate flavor, making it ideal for a large retail chain. Sourcing raw beans allows for in-house roasting, ensuring maximum freshness and quality control for the final product.' },
+                '2': { title: '2. HS Code: 1801.00.00', content: '<strong>Description:</strong> This is the internationally standardized Harmonized System code for "Cocoa beans, whole or broken, raw or roasted".<br><br><strong>Reasoning:</strong> Using the correct HS code is mandatory and critical for smooth customs clearance. It ensures that the 0% tariff under the GSP agreement is applied correctly, preventing costly delays or incorrect duty assessments.' },
+                '3': { title: '3. Country of Origin: Ghana', content: '<strong>Description:</strong> The cocoa beans are grown and harvested in Ghana.<br><br><strong>Reasoning:</strong> Ghana is a top-tier global producer known for high-quality, reliable beans certified by the Ghana Cocoa Board (Cocobod). Critically, its GSP trade status with Switzerland makes it a financially optimal choice.' },
+                '4': { title: '4. Place of Origin: Kumasi Region', content: '<strong>Description:</strong> The specific sourcing region within Ghana is Kumasi.<br><br><strong>Reasoning:</strong> Kumasi is a major cocoa-growing hub with well-established infrastructure and logistics networks for collecting, grading, and transporting beans to the port, ensuring a steady and efficient supply chain start.' },
+                '5': { title: '5. Packaging: 62.5 kg Jute Sacks', content: '<strong>Description:</strong> The beans are packed in standard-issue, breathable jute sacks.<br><br><strong>Reasoning:</strong> This is the global industry standard. Jute is durable and allows the beans to breathe, which is crucial for preventing moisture buildup and mold during the long ocean transit, thereby protecting product quality.' },
+                '8': { title: '8. INCO Term: FOB (Port of Tema)', content: '<strong>Description:</strong> Free On Board. The seller is responsible until the goods are loaded onto the vessel at the Port of Tema.<br><br><strong>Reasoning:</strong> FOB gives us (the buyer) maximum control over the most expensive and longest part of the journey: the ocean freight. This allows us to select our own carrier and negotiate competitive rates.' },
+                '9': { title: '9. Payment Term: Letter of Credit (L/C)', content: '<strong>Description:</strong> A bank-guaranteed payment method.<br><br><strong>Reasoning:</strong> An L/C provides the highest level of security for both parties. It guarantees payment to the supplier once they meet all shipping and documentation requirements, while ensuring we do not pay until the terms are met, minimizing risk.' },
+                '10': { title: '10. Regional Trade Agreement: GSP', content: '<strong>Description:</strong> The Generalized System of Preferences agreement between Switzerland and Ghana.<br><br><strong>Reasoning:</strong> This is the most critical element of our cost strategy. GSP allows for the duty-free import of Ghanaian cocoa beans into Switzerland, providing a substantial cost saving and a major competitive advantage.' },
+                'c1': { title: 'A. Product Cost (FOB)', content: '<strong>Description:</strong> This is the price paid to the Ghanaian supplier. The FOB term means this price includes the cost of goods plus all origin-side charges to get the container loaded onto the ship.<br><br><strong>Minute Breakdown:</strong><br>- Cost of Goods: $25,000.00<br>- Origin Handling (Trucking, Port Fees, Export Clearance): $700.00<br><strong>Total FOB Price: $25,700.00</strong>' },
+                'c3': { title: 'B. Ocean Freight & Insurance', content: '<strong>Description:</strong> The cost to transport the container from Ghana to Belgium and insure its value.<br><br><strong>Minute Breakdown:</strong><br>- Base Ocean Freight: $2,500.00<br>- Marine Insurance (0.5% of 110% of FOB value): $138.00<br><strong>Total: $2,638.00</strong>' },
+                'c4': { title: 'C. Destination Handling (EU/CH)', content: '<strong>Description:</strong> Fees paid to LSPs in Europe to get the cargo from the port to our warehouse.<br><br><strong>Minute Breakdown:</strong><br>- Antwerp Unloading & Fees: $400.00<br>- Rail Freight (Antwerp to Basel): $1,100.00<br>- Swiss Customs Brokerage Fee: $250.00<br>- Final Mile Trucking (Basel to Zurich): $250.00<br><strong>Total: $2,000.00</strong>' },
+                'c5': { title: 'D. Swiss VAT (2.6%)', content: '<strong>Description:</strong> Value Added Tax, a mandatory government tax applied at import.<br><br><strong>Calculation Basis (CIF Value):</strong><br>FOB ($25,700) + Insurance ($138) + Freight ($2,500) = $28,338<br><strong>VAT Calculation:</strong> 2.6% of $28,338 = $736.79<br><em>(Estimate rounded to $750 to include minor disbursement fees)</em>' },
+            };
+            
+            let currentSlide = 0;
+            const totalSlides = slides.length;
+            let map;
+            let chartInstances = {};
+            let mapInitialized = false;
+
+            const chartColors = {
+                c1: '#3B82F6', c2: '#D97706', c3: '#059669', c4: '#7C3AED',
+                c5: '#6B7280', text: '#374151'
+            };
+            
+            function initializeMap() {
+                if (mapInitialized) {
+                    map.invalidateSize();
+                    return;
+                };
+                const light_map = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { attribution: '&copy; OpenStreetMap &copy; CARTO' });
+                map = L.map('map', { layers: [light_map] }).setView([26.5, 2.5], 3);
+                const icon = L.divIcon({className: 'accent-text', html: '📍', iconSize: [20, 20], iconAnchor: [10, 20]});
+                L.marker([6.6885, -1.6244], {icon}).addTo(map).bindPopup('<b>1. Origin: Kumasi, Ghana</b>');
+                L.marker([5.6559, -0.0161], {icon}).addTo(map).bindPopup('<b>2. Port of Dispatch: Tema, Ghana</b>');
+                L.marker([51.2371, 4.3942], {icon}).addTo(map).bindPopup('<b>3. EU Port of Entry: Antwerp, Belgium</b>');
+                L.marker([47.5878, 7.5910], {icon}).addTo(map).bindPopup('<b>4. Inland Port: Basel, Switzerland</b>');
+                L.marker([47.3769, 8.5417], {icon}).addTo(map).bindPopup('<b>5. Final Destination: Zurich, Switzerland</b>');
+                L.polyline([[5.6559, -0.0161], [51.2371, 4.3942]], {color: chartColors.c1, weight: 3, dashArray: '5, 10'}).addTo(map);
+                L.polyline([[6.6885, -1.6244], [5.6559, -0.0161]], {color: chartColors.c1, weight: 2}).addTo(map);
+                L.polyline([[51.2371, 4.3942], [47.5878, 7.5910], [47.3769, 8.5417]], {color: chartColors.c1, weight: 2}).addTo(map);
+                map.fitBounds([[6.6885, -1.6244], [51.2371, 4.3942]], {padding: [50, 50]});
+                mapInitialized = true;
+            }
+            
+            function initializeCharts() {
+                Object.values(chartInstances).forEach(chart => chart.destroy());
+                chartInstances = {};
+
+                if (document.getElementById('executiveSummaryChart')) {
+                    chartInstances.executiveSummaryChart = new Chart(document.getElementById('executiveSummaryChart').getContext('2d'), {
+                        type: 'line',
+                        data: {
+                            labels: ['Q1', 'Q2', 'Q3', 'Q4'],
+                            datasets: [{
+                                label: 'Landed Cost / kg ($)',
+                                data: [3.15, 3.12, 3.10, 3.11],
+                                borderColor: chartColors.c1,
+                                backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                                fill: true,
+                                tension: 0.4
+                            }, {
+                                label: 'Lead Time (Days)',
+                                data: [28, 26, 27, 29],
+                                borderColor: chartColors.c2,
+                                backgroundColor: 'rgba(249, 115, 22, 0.1)',
+                                fill: true,
+                                tension: 0.4,
+                                yAxisID: 'y1'
+                            }]
+                        },
+                        options: {
+                            responsive: true, maintainAspectRatio: false,
+                            plugins: { legend: { position: 'bottom', labels: { color: chartColors.text } } },
+                            scales: {
+                                y: { beginAtZero: false, ticks: { color: chartColors.text, callback: v => `$${v.toFixed(2)}` } },
+                                y1: { position: 'right', beginAtZero: false, ticks: { color: chartColors.text, callback: v => `${v} days` }, grid: { drawOnChartArea: false } }
+                            }
+                        }
+                    });
+                }
+                if (document.getElementById('transitChart')) {
+                    chartInstances.transitChart = new Chart(document.getElementById('transitChart').getContext('2d'), { type: 'bar', data: { labels: ['Inland Truck', 'Ocean Freight', 'Inland Rail', 'Final Delivery'], datasets: [{ label: 'Max Days', data: [2, 22, 3, 1], backgroundColor: [chartColors.c3, chartColors.c1, chartColors.c4, chartColors.c2], borderWidth: 0 }] }, options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { ticks: { color: chartColors.text, callback: (v) => v + ' days' }, grid: { color: '#E5E7EB' } }, y: { ticks: { color: chartColors.text }, grid: { display: false } } } } });
+                }
+                 if (document.getElementById('costBreakdownPieChart')) {
+                    chartInstances.costBreakdownPieChart = new Chart(document.getElementById('costBreakdownPieChart').getContext('2d'), {
+                        type: 'pie',
+                        data: {
+                            labels: ['Product Cost (FOB)', 'Ocean Freight & Ins.', 'Destination Handling', 'Swiss VAT'],
+                            datasets: [{
+                                data: [25700, 2638, 2000, 750],
+                                backgroundColor: [chartColors.c1, chartColors.c2, chartColors.c4, chartColors.c3],
+                                borderColor: '#FFFFFF',
+                                borderWidth: 4
+                            }]
+                        },
+                        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { color: chartColors.text, padding: 20 } } } }
+                    });
+                }
+                if (document.getElementById('costBuildupChart')) {
+                    chartInstances.costBuildupChart = new Chart(document.getElementById('costBuildupChart').getContext('2d'), {
+                        type: 'bar', data: { labels: ['Cost per KG (USD)'], datasets: [ { label: 'Product (FOB)', data: [2.57], backgroundColor: chartColors.c1 }, { label: 'Logistics', data: [0.46], backgroundColor: chartColors.c2 }, { label: 'VAT/Customs', data: [0.08], backgroundColor: chartColors.c3 } ] },
+                        options: { scales: { x: { stacked: true, grid: { display: false }, ticks: { color: chartColors.text } }, y: { stacked: true, grid: { color: '#E5E7EB' }, ticks: { callback: (v) => '$' + v.toFixed(2), color: chartColors.text } } }, responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { color: chartColors.text } } } }
+                    });
+                }
+                if (document.getElementById('sourcingChart')) {
+                    chartInstances.sourcingChart = new Chart(document.getElementById('sourcingChart').getContext('2d'), {
+                        type: 'doughnut', data: { labels: ['Ghana', 'Côte d\'Ivoire', 'Ecuador', 'Other'], datasets: [{ data: [40, 15, 20, 25], backgroundColor: [chartColors.c3, chartColors.c2, chartColors.c4, chartColors.c5], borderColor: '#FFFFFF', borderWidth: 4 }] },
+                        options: { responsive: true, maintainAspectRatio: false, cutout: '60%', plugins: { legend: { position: 'bottom', labels: { color: chartColors.text } } } }
+                    });
+                }
+            }
+
+            function showSlide(index) {
+                slides.forEach((slide, i) => slide.classList.toggle('active', i === index));
+                if (slides[index].id === 'slide-6') {
+                    // Use a small delay to ensure the slide is visible before initializing/resizing the map
+                    setTimeout(() => initializeMap(), 50);
+                }
+                // Initialize charts on every slide change
+                setTimeout(() => initializeCharts(), 50);
+                updateControls();
+            }
+
+            function updateControls() {
+                slideCounter.textContent = `${currentSlide + 1} / ${totalSlides}`;
+                progressBar.style.width = `${(currentSlide / (totalSlides - 1)) * 100}%`;
+                prevBtn.disabled = currentSlide === 0;
+                nextBtn.disabled = currentSlide === totalSlides - 1;
+            }
+
+            nextBtn.addEventListener('click', () => { if (currentSlide < totalSlides - 1) showSlide(++currentSlide); });
+            prevBtn.addEventListener('click', () => { if (currentSlide > 0) showSlide(--currentSlide); });
+            
+            document.addEventListener('keydown', (e) => {
+                if(e.key === 'ArrowRight' && !nextBtn.disabled) nextBtn.click();
+                if(e.key === 'ArrowLeft' && !prevBtn.disabled) prevBtn.click();
+                if(e.key === 'Escape' && detailModal.classList.contains('active')) hideModal();
+            });
+
+            function showModal(id) {
+                const details = allDetails[id];
+                if (details) {
+                    modalTitle.innerHTML = details.title;
+                    modalBody.innerHTML = details.content;
+                    detailModal.classList.add('active');
+                }
+            }
+
+            function hideModal() { detailModal.classList.remove('active'); }
+
+            clickableItems.forEach(item => item.addEventListener('click', () => showModal(item.getAttribute('data-id'))));
+            closeModalBtn.addEventListener('click', hideModal);
+            detailModal.addEventListener('click', (e) => { if (e.target === detailModal) hideModal(); });
+
+            showSlide(currentSlide);
+        });
+    </script>
+</body>
+</html>
